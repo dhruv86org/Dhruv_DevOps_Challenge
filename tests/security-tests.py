@@ -111,27 +111,26 @@ class SecurityTester:
                                   verify=False, timeout=10)
             
             headers = response.headers
-            security_headers = {
+            
+            # Required security headers with exact expected values
+            required_headers = {
+                'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+                'X-Frame-Options': 'SAMEORIGIN',
                 'X-Content-Type-Options': 'nosniff',
-                'X-Frame-Options': ['DENY', 'SAMEORIGIN'],
                 'X-XSS-Protection': '1; mode=block'
             }
             
             success = True
-            for header, expected in security_headers.items():
+            for header, expected_value in required_headers.items():
                 if header in headers:
-                    if isinstance(expected, list):
-                        if headers[header] in expected:
-                            print(f"✅ {header}: {headers[header]}")
-                        else:
-                            print(f"⚠️ {header}: {headers[header]} (consider {expected})")
+                    actual_value = headers[header]
+                    if actual_value == expected_value:
+                        print(f"✅ {header}: {actual_value}")
                     else:
-                        if headers[header] == expected:
-                            print(f"✅ {header}: {headers[header]}")
-                        else:
-                            print(f"⚠️ {header}: {headers[header]} (expected {expected})")
+                        print(f"❌ {header}: {actual_value} (expected: {expected_value})")
+                        success = False
                 else:
-                    print(f"⚠️ Missing security header: {header}")
+                    print(f"❌ Missing security header: {header}")
                     success = False
             
             return success
@@ -173,7 +172,20 @@ class SecurityTester:
             
             if response.status_code == 200 and "healthy" in response.text.lower():
                 print("✅ Health endpoint is working")
-                return True
+                
+                # Also check if health endpoint has security headers
+                headers = response.headers
+                required_headers = ['Strict-Transport-Security', 'X-Frame-Options', 'X-Content-Type-Options', 'X-XSS-Protection']
+                
+                headers_present = True
+                for header in required_headers:
+                    if header not in headers:
+                        print(f"⚠️ Health endpoint missing header: {header}")
+                        headers_present = False
+                    else:
+                        print(f"✅ Health endpoint has header: {header}")
+                
+                return headers_present
             else:
                 print(f"❌ Health endpoint failed: {response.status_code}")
                 return False
