@@ -121,12 +121,12 @@ jobs:
       run: |
         # Get VM Scale Set name
         VMSS_NAME=$(az vmss list \
-          --resource-group ${{ needs.terraform.outputs.resource_group }} \
+          --resource-group ${{ vars.RESOURCE_GROUP_NAME }} \
           --query "[0].name" -o tsv)
         
         # Restart all instances to pick up new content
         az vmss restart \
-          --resource-group ${{ needs.terraform.outputs.resource_group }} \
+          --resource-group ${{ vars.RESOURCE_GROUP_NAME }} \
           --name $VMSS_NAME
     
     - name: Wait for Deployment
@@ -167,7 +167,7 @@ jobs:
     - name: Setup Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
+        python-version: '3.13'
     
     - name: Install Dependencies
       run: |
@@ -198,7 +198,7 @@ jobs:
         echo "Environment: ${{ env.TF_VAR_environment }}"
         echo "Public IP: ${{ needs.terraform.outputs.public_ip }}"
         echo "Application URL: https://${{ needs.terraform.outputs.public_ip }}"
-        echo "Resource Group: ${{ needs.terraform.outputs.resource_group }}"
+        echo "Resource Group: ${{ vars.RESOURCE_GROUP_NAME }}"
         echo ""
         echo "Job Status:"
         echo "- Terraform: ${{ needs.terraform.result }}"
