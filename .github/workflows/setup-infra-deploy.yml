@@ -21,11 +21,12 @@ jobs:
       public_ip: ${{ steps.terraform_output.outputs.public_ip }}
       resource_group: ${{ steps.terraform_output.outputs.resource_group }}
     
-    # Only run if terraform files changed or on main branch
+    # Only run if terraform files changed or on main/feature branch
     if: |
       contains(github.event.head_commit.modified, 'terraform/') ||
       contains(github.event.head_commit.added, 'terraform/') ||
       github.ref_name == 'feature_dhruv' ||
+      github.ref_name == 'main' ||
       github.event_name == 'pull_request'
     
     defaults:
