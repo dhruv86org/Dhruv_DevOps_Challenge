@@ -6,13 +6,108 @@ packages:
   - nginx
   - azure-cli
   - curl
+  - logrotate
 
 write_files:
+  - path: /etc/nginx/nginx.conf
+    content: |
+      user www-data;
+      worker_processes auto;
+      pid /run/nginx.pid;
+      include /etc/nginx/modules-enabled/*.conf;
+
+      events {
+          worker_connections 768;
+          # multi_accept on;
+      }
+
+      http {
+          ##
+          # Basic Settings
+          ##
+          sendfile on;
+          tcp_nopush on;
+          tcp_nodelay on;
+          keepalive_timeout 65;
+          types_hash_max_size 2048;
+          server_tokens off;
+
+          include /etc/nginx/mime.types;
+          default_type application/octet-stream;
+
+          ##
+          # Logging Settings
+          ##
+          
+          # Define custom log formats
+          log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                         '$status $body_bytes_sent "$http_referer" '
+                         '"$http_user_agent" "$http_x_forwarded_for"';
+          
+          log_format detailed '$remote_addr - $remote_user [$time_local] "$request" '
+                             '$status $body_bytes_sent "$http_referer" '
+                             '"$http_user_agent" "$http_x_forwarded_for" '
+                             'rt=$request_time uct="$upstream_connect_time" '
+                             'uht="$upstream_header_time" urt="$upstream_response_time"';
+          
+          log_format json_combined escape=json
+            '{'
+              '"time_local":"$time_local",'
+              '"remote_addr":"$remote_addr",'
+              '"remote_user":"$remote_user",'
+              '"request":"$request",'
+              '"status": "$status",'
+              '"body_bytes_sent":"$body_bytes_sent",'
+              '"request_time":"$request_time",'
+              '"http_referrer":"$http_referer",'
+              '"http_user_agent":"$http_user_agent",'
+              '"http_x_forwarded_for":"$http_x_forwarded_for",'
+              '"http_host":"$http_host",'
+              '"server_name":"$server_name",'
+              '"request_uri":"$request_uri",'
+              '"https":"$https"'
+            '}';
+
+          # Access log configuration
+          access_log /var/log/nginx/access.log main;
+          
+          # Error log configuration
+          error_log /var/log/nginx/error.log warn;
+
+          ##
+          # Gzip Settings
+          ##
+          gzip on;
+          gzip_vary on;
+          gzip_proxied any;
+          gzip_comp_level 6;
+          gzip_types
+              text/plain
+              text/css
+              text/xml
+              text/javascript
+              application/json
+              application/javascript
+              application/xml+rss
+              application/atom+xml
+              image/svg+xml;
+
+          ##
+          # Virtual Host Configs
+          ##
+          include /etc/nginx/conf.d/*.conf;
+          include /etc/nginx/sites-enabled/*;
+      }
+
   - path: /etc/nginx/sites-available/default
     content: |
       server {
           listen 80 default_server;
           listen [::]:80 default_server;
+          
+          # Custom access log for HTTP requests (redirects)
+          access_log /var/log/nginx/http_access.log main;
+          error_log /var/log/nginx/http_error.log warn;
           
           # Redirect HTTP to HTTPS using host header
           return 301 https://$host$request_uri;
@@ -21,6 +116,11 @@ write_files:
       server {
           listen 443 ssl default_server;
           listen [::]:443 ssl default_server;
+          
+          # Custom access and error logs for HTTPS
+          access_log /var/log/nginx/https_access.log detailed;
+          access_log /var/log/nginx/https_access_json.log json_combined;
+          error_log /var/log/nginx/https_error.log warn;
           
           # Self-signed SSL certificate
           ssl_certificate /etc/ssl/certs/nginx-selfsigned.crt;
@@ -34,7 +134,7 @@ write_files:
           root /var/www/html;
           index index.html;
           
-          # Security headers
+          # Security headers - applied to all responses
           add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
           add_header X-Frame-Options "SAMEORIGIN" always;
           add_header X-Content-Type-Options "nosniff" always;
@@ -42,24 +142,91 @@ write_files:
           
           location / {
               try_files $uri $uri/ =404;
+              
+              # Log successful requests
+              access_log /var/log/nginx/app_access.log main;
           }
           
           # Health check endpoint
           location /health {
+              # Disable access logging for health checks to reduce noise
               access_log off;
+              
+              # But log errors for health endpoint
+              error_log /var/log/nginx/health_error.log warn;
+              
               return 200 "healthy\n";
-              add_header Content-Type text/plain;
-              # Security headers for health endpoint
-              add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-              add_header X-Frame-Options "SAMEORIGIN" always;
-              add_header X-Content-Type-Options "nosniff" always;
-              add_header X-XSS-Protection "1; mode=block" always;
+              add_header Content-Type text/plain always;
+          }
+          
+          # Monitoring endpoint with detailed logging
+          location /status {
+              access_log /var/log/nginx/status_access.log detailed;
+              return 200 "status: ok\nserver: $server_name\ntime: $time_local\n";
+              add_header Content-Type text/plain always;
           }
       }
 
+  - path: /etc/logrotate.d/nginx-custom
+    content: |
+      /var/log/nginx/*.log {
+          daily
+          missingok
+          rotate 30
+          compress
+          delaycompress
+          notifempty
+          create 0644 www-data adm
+          sharedscripts
+          prerotate
+              if [ -d /etc/logrotate.d/httpd-prerotate ]; then \
+                  run-parts /etc/logrotate.d/httpd-prerotate; \
+              fi \
+          endscript
+          postrotate
+              invoke-rc.d nginx rotate >/dev/null 2>&1
+          endscript
+      }
+
+  - path: /usr/local/bin/nginx-log-monitor.sh
+    content: |
+      #!/bin/bash
+      # Simple log monitoring script
+      
+      LOG_DIR="/var/log/nginx"
+      
+      echo "=== Nginx Log Summary ==="
+      echo "Date: $(date)"
+      echo
+      
+      # Check if logs exist
+      if [ -f "$LOG_DIR/access.log" ]; then
+          echo "=== Access Log Summary (Last 100 lines) ==="
+          tail -100 "$LOG_DIR/access.log" | awk '{print $9}' | sort | uniq -c | sort -nr
+          echo
+      fi
+      
+      if [ -f "$LOG_DIR/error.log" ]; then
+          echo "=== Recent Errors (Last 50 lines) ==="
+          tail -50 "$LOG_DIR/error.log"
+          echo
+      fi
+      
+      echo "=== Log File Sizes ==="
+      ls -lh "$LOG_DIR"/*.log 2>/dev/null || echo "No log files found"
+      echo
+      
+      echo "=== Nginx Status ==="
+      systemctl status nginx --no-pager -l
+    permissions: '0755'
+
 runcmd:
   - systemctl enable nginx
-  - systemctl start nginx
+  
+  # Create log directory and set permissions
+  - mkdir -p /var/log/nginx
+  - chown -R www-data:adm /var/log/nginx
+  - chmod -R 755 /var/log/nginx
   
   # Generate self-signed SSL certificate
   - openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/nginx-selfsigned.key -out /etc/ssl/certs/nginx-selfsigned.crt -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
@@ -72,11 +239,20 @@ runcmd:
   - chown -R www-data:www-data /var/www/html
   - chmod -R 755 /var/www/html
   
-  # Restart nginx to apply SSL configuration
-  - systemctl restart nginx
+  # Test nginx configuration before starting
+  - nginx -t
+  
+  # Start nginx
+  - systemctl start nginx
   
   # Enable firewall and allow only necessary ports
   - ufw --force enable
   - ufw allow 22/tcp
   - ufw allow 80/tcp
   - ufw allow 443/tcp
+  
+  # Set up log rotation
+  - systemctl enable logrotate
+  
+  # Create a cron job for log monitoring (optional)
+  - echo "0 6 * * * root /usr/local/bin/nginx-log-monitor.sh > /var/log/nginx-monitor.log 2>&1" >> /etc/crontab
