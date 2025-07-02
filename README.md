@@ -52,6 +52,13 @@ SSH_PRIVATE_KEY         # SSH private key content
 TERRAFORM_STATE_RG      # Resource group for Terraform state
 TERRAFORM_STATE_SA      # Storage account for Terraform state
 ```
+### Required GitHub Variables
+Configure the following variable(s) in your GitHub repository:
+
+```bash
+RESOURCE_GROUP_NAME # Name of the resource group where infrastructure is created
+
+```
 
 ### Setup Azure Service Principal
 
