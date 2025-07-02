@@ -1,11 +1,14 @@
 #cloud-config
 package_update: true
-package_upgrade: true
+# package_upgrade: true
 
-packages:
-  - nginx
-  - azure-cli
-  - curl
+# packages:
+#   - nginx
+#   - azure-cli
+#   - curl
+bootcmd:
+  - apt-get update
+  - apt-get install -y nginx
 
 write_files:
   - path: /etc/nginx/sites-available/default
@@ -54,6 +57,7 @@ write_files:
       }
 
 runcmd:
+  - curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
   - systemctl enable nginx
   - systemctl start nginx
   
