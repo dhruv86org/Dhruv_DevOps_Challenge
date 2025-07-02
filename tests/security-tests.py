@@ -102,6 +102,7 @@ class SecurityTester:
             print(f"❌ HTTP redirect test failed: {str(e)}")
             return False
     
+
     def test_security_headers(self) -> bool:
         """Test security headers"""
         print("🔍 Testing security headers...")
@@ -138,6 +139,7 @@ class SecurityTester:
         except Exception as e:
             print(f"❌ Security headers test failed: {str(e)}")
             return False
+
     
     def test_application_availability(self) -> bool:
         """Test application availability and content"""
@@ -194,6 +196,8 @@ class SecurityTester:
             print(f"❌ Health endpoint test failed: {str(e)}")
             return False
     
+
+
     
     def _is_port_open(self, port: int, timeout: int = 5) -> bool:
         """Check if a port is open"""

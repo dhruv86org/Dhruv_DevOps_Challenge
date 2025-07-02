@@ -1,5 +1,6 @@
 #cloud-config
 package_update: true
+
 # package_upgrade: true
 
 # packages:
@@ -9,6 +10,7 @@ package_update: true
 bootcmd:
   - apt-get update
   - apt-get install -y nginx
+
 
 write_files:
   - path: /etc/nginx/sites-available/default
@@ -49,6 +51,7 @@ write_files:
           add_header X-Frame-Options "SAMEORIGIN" always;
           add_header X-Content-Type-Options "nosniff" always;
           add_header X-XSS-Protection "1; mode=block" always;
+
           
           location / {
               try_files $uri $uri/ =404;
@@ -59,6 +62,7 @@ write_files:
               access_log off;
               return 200 "healthy\n";
               add_header Content-Type text/plain;
+
               # Security headers for health endpoint
               add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
               add_header X-Frame-Options "SAMEORIGIN" always;
