@@ -25,7 +25,6 @@ write_files:
           exit 1
       fi
       
-      # Check nginx configuration
       echo "2. Checking nginx configuration..."
       if nginx -t; then
           echo "✅ Nginx configuration is valid"
@@ -36,10 +35,9 @@ write_files:
           find /etc/nginx -name "*.conf" -o -name "default" | head -10
       fi
       
-      # Check required directories
       echo "3. Checking required directories..."
       directories=("/var/www/html" "/var/log/nginx" "/etc/ssl/private" "/etc/ssl/certs")
-      for dir in "${directories[@]}"; do
+      for dir in "$${directories[@]}"; do
           if [ -d "$dir" ]; then
               echo "✅ Directory exists: $dir"
               ls -la "$dir" | head -5
@@ -48,7 +46,6 @@ write_files:
           fi
       done
       
-      # Check SSL certificates
       echo "4. Checking SSL certificates..."
       if [ -f "/etc/ssl/certs/nginx-selfsigned.crt" ] && [ -f "/etc/ssl/private/nginx-selfsigned.key" ]; then
           echo "✅ SSL certificates exist"
@@ -59,7 +56,6 @@ write_files:
           ls -la /etc/ssl/private/ | grep nginx || echo "No nginx private keys found"
       fi
       
-      # Check file permissions
       echo "5. Checking file permissions..."
       if [ -f "/etc/ssl/private/nginx-selfsigned.key" ]; then
           echo "SSL key permissions: $(ls -la /etc/ssl/private/nginx-selfsigned.key)"
@@ -71,7 +67,6 @@ write_files:
           echo "Web root permissions: $(ls -la /var/www/html/)"
       fi
       
-      # Check if nginx process can start
       echo "6. Testing nginx startup..."
       systemctl stop nginx 2>/dev/null || true
       
@@ -89,7 +84,6 @@ write_files:
           exit 1
       fi
       
-      # Test basic connectivity
       echo "7. Testing basic connectivity..."
       sleep 3
       
@@ -124,7 +118,6 @@ write_files:
           include /etc/nginx/mime.types;
           default_type application/octet-stream;
 
-          # Logging
           log_format main '$remote_addr - $remote_user [$time_local] "$request" '
                          '$status $body_bytes_sent "$http_referer" '
                          '"$http_user_agent" "$http_x_forwarded_for"';
@@ -132,7 +125,6 @@ write_files:
           access_log /var/log/nginx/access.log main;
           error_log /var/log/nginx/error.log warn;
 
-          # Gzip
           gzip on;
           gzip_vary on;
           gzip_proxied any;
@@ -154,7 +146,6 @@ write_files:
 
   - path: /etc/nginx/sites-available/default
     content: |
-      # HTTP server - redirect to HTTPS
       server {
           listen 80 default_server;
           listen [::]:80 default_server;
@@ -167,7 +158,6 @@ write_files:
           return 301 https://$host$request_uri;
       }
       
-      # HTTPS server
       server {
           listen 443 ssl default_server;
           listen [::]:443 ssl default_server;
@@ -177,7 +167,6 @@ write_files:
           access_log /var/log/nginx/https_access.log main;
           error_log /var/log/nginx/https_error.log warn;
           
-          # SSL Configuration
           ssl_certificate /etc/ssl/certs/nginx-selfsigned.crt;
           ssl_certificate_key /etc/ssl/private/nginx-selfsigned.key;
           
@@ -187,29 +176,24 @@ write_files:
           ssl_session_cache shared:SSL:10m;
           ssl_session_timeout 10m;
           
-          # Document root
           root /var/www/html;
           index index.html;
           
-          # Security headers (applied to all responses)
           add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
           add_header X-Frame-Options "SAMEORIGIN" always;
           add_header X-Content-Type-Options "nosniff" always;
           add_header X-XSS-Protection "1; mode=block" always;
           
-          # Main location
           location / {
               try_files $uri $uri/ =404;
           }
           
-          # Health check endpoint
           location = /health {
               access_log off;
               add_header Content-Type "text/plain" always;
               return 200 "healthy\n";
           }
           
-          # Status endpoint
           location = /status {
               add_header Content-Type "text/plain" always;
               return 200 "status: ok\nserver: $host\ntime: $time_local\n";
@@ -223,7 +207,6 @@ write_files:
       
       echo "=== Starting nginx setup ==="
       
-      # Wait for nginx installation
       echo "Waiting for nginx installation..."
       timeout=120
       counter=0
@@ -239,10 +222,8 @@ write_files:
       
       echo "✅ Nginx found: $(nginx -v 2>&1)"
       
-      # Stop nginx if running
       systemctl stop nginx 2>/dev/null || true
       
-      # Create directories
       echo "Creating directories..."
       mkdir -p /var/log/nginx
       mkdir -p /var/www/html
@@ -251,13 +232,11 @@ write_files:
       mkdir -p /etc/nginx/sites-available
       mkdir -p /etc/nginx/sites-enabled
       
-      # Set permissions
       chown -R www-data:adm /var/log/nginx
       chmod -R 755 /var/log/nginx
       chown -R www-data:www-data /var/www/html
       chmod -R 755 /var/www/html
       
-      # Generate SSL certificate
       echo "Generating SSL certificate..."
       openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
           -keyout /etc/ssl/private/nginx-selfsigned.key \
@@ -272,7 +251,6 @@ write_files:
       
       echo "✅ SSL certificates created"
       
-      # Download web content
       echo "Downloading web content..."
       for i in {1..5}; do
           if az storage blob download \
@@ -309,16 +287,13 @@ write_files:
           fi
       done
       
-      # Set web content permissions
       chown -R www-data:www-data /var/www/html
       chmod -R 644 /var/www/html/*
       chmod 755 /var/www/html
       
-      # Enable site
       rm -f /etc/nginx/sites-enabled/default
       ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
       
-      # Test configuration
       echo "Testing nginx configuration..."
       if nginx -t; then
           echo "✅ Configuration valid"
@@ -330,7 +305,6 @@ write_files:
           exit 1
       fi
       
-      # Start nginx
       echo "Starting nginx..."
       systemctl enable nginx
       
@@ -338,7 +312,6 @@ write_files:
           echo "✅ Nginx started successfully"
           sleep 3
           
-          # Basic connectivity test
           if curl -k -s -f https://localhost > /dev/null; then
               echo "✅ HTTPS working"
           else
@@ -361,23 +334,16 @@ write_files:
     permissions: '0755'
 
 runcmd:
-  # First, run the setup script
   - /usr/local/bin/setup-nginx.sh
-  
-  # If setup fails, run debug script
   - |
     if ! systemctl is-active --quiet nginx; then
       echo "Nginx is not running, running debug script..."
       /usr/local/bin/debug-nginx.sh || true
     fi
-  
-  # Configure firewall
   - ufw --force enable
   - ufw allow 22/tcp
   - ufw allow 80/tcp
   - ufw allow 443/tcp
-  
-  # Final status check
   - echo "=== Final Status Check ==="
   - systemctl status nginx --no-pager -l || true
   - nginx -t || true
