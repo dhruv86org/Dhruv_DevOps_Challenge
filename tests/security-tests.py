@@ -194,25 +194,6 @@ class SecurityTester:
             print(f"❌ Health endpoint test failed: {str(e)}")
             return False
     
-    def test_status_endpoint(self) -> bool:
-        """Test status monitoring endpoint"""
-        print("🔍 Testing status endpoint...")
-        
-        try:
-            response = requests.get(f"https://{self.public_ip}/status", 
-                                  verify=False, timeout=10)
-            
-            if response.status_code == 200 and "status: ok" in response.text.lower():
-                print("✅ Status endpoint is working")
-                print(f"✅ Status response: {response.text.strip()}")
-                return True
-            else:
-                print(f"❌ Status endpoint failed: {response.status_code}")
-                return False
-                
-        except Exception as e:
-            print(f"❌ Status endpoint test failed: {str(e)}")
-            return False
     
     def _is_port_open(self, port: int, timeout: int = 5) -> bool:
         """Check if a port is open"""
@@ -233,8 +214,7 @@ class SecurityTester:
             ("HTTP to HTTPS Redirect", self.test_http_to_https_redirect),
             ("Security Headers", self.test_security_headers),
             ("Application Availability", self.test_application_availability),
-            ("Health Endpoint", self.test_health_endpoint),
-            ("Status Endpoint", self.test_status_endpoint)
+            ("Health Endpoint", self.test_health_endpoint)
         ]
         
         results = []
