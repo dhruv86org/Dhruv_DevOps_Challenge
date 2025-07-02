@@ -6,9 +6,102 @@ packages:
   - nginx
   - azure-cli
   - curl
-  - logrotate
+  - unzip
+  - openssl
 
 write_files:
+  - path: /usr/local/bin/debug-nginx.sh
+    content: |
+      #!/bin/bash
+      echo "=== NGINX DEBUGGING SCRIPT ==="
+      echo "1. Checking nginx installation..."
+      
+      if command -v nginx &> /dev/null; then
+          echo "✅ Nginx is installed: $(nginx -v 2>&1)"
+      else
+          echo "❌ Nginx is not installed"
+          echo "Available packages:"
+          apt list --installed | grep nginx || true
+          exit 1
+      fi
+      
+      # Check nginx configuration
+      echo "2. Checking nginx configuration..."
+      if nginx -t; then
+          echo "✅ Nginx configuration is valid"
+      else
+          echo "❌ Nginx configuration is invalid:"
+          nginx -t 2>&1 || true
+          echo "Configuration files:"
+          find /etc/nginx -name "*.conf" -o -name "default" | head -10
+      fi
+      
+      # Check required directories
+      echo "3. Checking required directories..."
+      directories=("/var/www/html" "/var/log/nginx" "/etc/ssl/private" "/etc/ssl/certs")
+      for dir in "${directories[@]}"; do
+          if [ -d "$dir" ]; then
+              echo "✅ Directory exists: $dir"
+              ls -la "$dir" | head -5
+          else
+              echo "❌ Missing directory: $dir"
+          fi
+      done
+      
+      # Check SSL certificates
+      echo "4. Checking SSL certificates..."
+      if [ -f "/etc/ssl/certs/nginx-selfsigned.crt" ] && [ -f "/etc/ssl/private/nginx-selfsigned.key" ]; then
+          echo "✅ SSL certificates exist"
+          openssl x509 -in /etc/ssl/certs/nginx-selfsigned.crt -text -noout | head -10
+      else
+          echo "❌ SSL certificates missing"
+          ls -la /etc/ssl/certs/ | grep nginx || echo "No nginx certificates found"
+          ls -la /etc/ssl/private/ | grep nginx || echo "No nginx private keys found"
+      fi
+      
+      # Check file permissions
+      echo "5. Checking file permissions..."
+      if [ -f "/etc/ssl/private/nginx-selfsigned.key" ]; then
+          echo "SSL key permissions: $(ls -la /etc/ssl/private/nginx-selfsigned.key)"
+      fi
+      if [ -f "/etc/ssl/certs/nginx-selfsigned.crt" ]; then
+          echo "SSL cert permissions: $(ls -la /etc/ssl/certs/nginx-selfsigned.crt)"
+      fi
+      if [ -d "/var/www/html" ]; then
+          echo "Web root permissions: $(ls -la /var/www/html/)"
+      fi
+      
+      # Check if nginx process can start
+      echo "6. Testing nginx startup..."
+      systemctl stop nginx 2>/dev/null || true
+      
+      if systemctl start nginx; then
+          echo "✅ Nginx started successfully"
+          systemctl status nginx --no-pager -l
+      else
+          echo "❌ Nginx failed to start"
+          echo "Systemctl status:"
+          systemctl status nginx --no-pager -l || true
+          echo "Nginx error log:"
+          tail -50 /var/log/nginx/error.log 2>/dev/null || echo "No error log found"
+          echo "System journal for nginx:"
+          journalctl -u nginx --no-pager -l --since "5 minutes ago" || true
+          exit 1
+      fi
+      
+      # Test basic connectivity
+      echo "7. Testing basic connectivity..."
+      sleep 3
+      
+      echo "Testing HTTP (should redirect):"
+      curl -v -I http://localhost 2>&1 || true
+      
+      echo "Testing HTTPS:"
+      curl -v -k -I https://localhost 2>&1 || true
+      
+      echo "=== DEBUGGING COMPLETE ==="
+    permissions: '0755'
+
   - path: /etc/nginx/nginx.conf
     content: |
       user www-data;
@@ -21,9 +114,6 @@ write_files:
       }
 
       http {
-          ##
-          # Basic Settings
-          ##
           sendfile on;
           tcp_nopush on;
           tcp_nodelay on;
@@ -34,30 +124,15 @@ write_files:
           include /etc/nginx/mime.types;
           default_type application/octet-stream;
 
-          ##
-          # Logging Settings
-          ##
-          
-          # Define custom log formats
+          # Logging
           log_format main '$remote_addr - $remote_user [$time_local] "$request" '
                          '$status $body_bytes_sent "$http_referer" '
                          '"$http_user_agent" "$http_x_forwarded_for"';
-          
-          log_format detailed '$remote_addr - $remote_user [$time_local] "$request" '
-                             '$status $body_bytes_sent "$http_referer" '
-                             '"$http_user_agent" "$http_x_forwarded_for" '
-                             'rt=$request_time uct="$upstream_connect_time" '
-                             'uht="$upstream_header_time" urt="$upstream_response_time"';
 
-          # Access log configuration
           access_log /var/log/nginx/access.log main;
-          
-          # Error log configuration
           error_log /var/log/nginx/error.log warn;
 
-          ##
-          # Gzip Settings
-          ##
+          # Gzip
           gzip on;
           gzip_vary on;
           gzip_proxied any;
@@ -73,117 +148,72 @@ write_files:
               application/atom+xml
               image/svg+xml;
 
-          ##
-          # Virtual Host Configs
-          ##
           include /etc/nginx/conf.d/*.conf;
           include /etc/nginx/sites-enabled/*;
       }
 
   - path: /etc/nginx/sites-available/default
     content: |
+      # HTTP server - redirect to HTTPS
       server {
           listen 80 default_server;
           listen [::]:80 default_server;
           
-          # Custom access log for HTTP requests (redirects)
+          server_name _;
+          
           access_log /var/log/nginx/http_access.log main;
           error_log /var/log/nginx/http_error.log warn;
           
-          # Redirect HTTP to HTTPS
-          location / {
-              return 301 https://$host$request_uri;
-          }
+          return 301 https://$host$request_uri;
       }
       
+      # HTTPS server
       server {
           listen 443 ssl default_server;
           listen [::]:443 ssl default_server;
           
-          # Custom access and error logs for HTTPS
-          access_log /var/log/nginx/https_access.log detailed;
+          server_name _;
+          
+          access_log /var/log/nginx/https_access.log main;
           error_log /var/log/nginx/https_error.log warn;
           
-          # Self-signed SSL certificate
+          # SSL Configuration
           ssl_certificate /etc/ssl/certs/nginx-selfsigned.crt;
           ssl_certificate_key /etc/ssl/private/nginx-selfsigned.key;
           
-          # SSL configuration
           ssl_protocols TLSv1.2 TLSv1.3;
           ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES128-GCM-SHA256;
           ssl_prefer_server_ciphers off;
           ssl_session_cache shared:SSL:10m;
           ssl_session_timeout 10m;
           
+          # Document root
           root /var/www/html;
           index index.html;
           
-          # Main location block
+          # Security headers (applied to all responses)
+          add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+          add_header X-Frame-Options "SAMEORIGIN" always;
+          add_header X-Content-Type-Options "nosniff" always;
+          add_header X-XSS-Protection "1; mode=block" always;
+          
+          # Main location
           location / {
               try_files $uri $uri/ =404;
-              
-              # Security headers - moved inside location block
-              add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-              add_header X-Frame-Options "SAMEORIGIN" always;
-              add_header X-Content-Type-Options "nosniff" always;
-              add_header X-XSS-Protection "1; mode=block" always;
-              
-              # Log successful requests
-              access_log /var/log/nginx/app_access.log main;
           }
           
           # Health check endpoint
-          location /health {
-              # Disable access logging for health checks to reduce noise
+          location = /health {
               access_log off;
-              
-              # But log errors for health endpoint
-              error_log /var/log/nginx/health_error.log warn;
-              
-              # Security headers for health endpoint
-              add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-              add_header X-Frame-Options "SAMEORIGIN" always;
-              add_header X-Content-Type-Options "nosniff" always;
-              add_header X-XSS-Protection "1; mode=block" always;
               add_header Content-Type "text/plain" always;
-              
               return 200 "healthy\n";
           }
           
-          # Status monitoring endpoint
-          location /status {
-              access_log /var/log/nginx/status_access.log detailed;
-              
-              # Security headers for status endpoint
-              add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-              add_header X-Frame-Options "SAMEORIGIN" always;
-              add_header X-Content-Type-Options "nosniff" always;
-              add_header X-XSS-Protection "1; mode=block" always;
+          # Status endpoint
+          location = /status {
               add_header Content-Type "text/plain" always;
-              
-              return 200 "status: ok\nserver: $server_name\ntime: $time_local\n";
+              return 200 "status: ok\nserver: $host\ntime: $time_local\n";
           }
-      }
-
-  - path: /etc/logrotate.d/nginx-custom
-    content: |
-      /var/log/nginx/*.log {
-          daily
-          missingok
-          rotate 30
-          compress
-          delaycompress
-          notifempty
-          create 0644 www-data adm
-          sharedscripts
-          prerotate
-              if [ -d /etc/logrotate.d/httpd-prerotate ]; then \
-                  run-parts /etc/logrotate.d/httpd-prerotate; \
-              fi \
-          endscript
-          postrotate
-              invoke-rc.d nginx rotate >/dev/null 2>&1
-          endscript
       }
 
   - path: /usr/local/bin/setup-nginx.sh
@@ -193,39 +223,41 @@ write_files:
       
       echo "=== Starting nginx setup ==="
       
-      # Wait for package installation to complete
+      # Wait for nginx installation
       echo "Waiting for nginx installation..."
-      timeout=60
+      timeout=120
       counter=0
       while ! command -v nginx &> /dev/null; do
           if [ $counter -ge $timeout ]; then
               echo "ERROR: Nginx installation timeout"
               exit 1
           fi
-          echo "Waiting for nginx installation to complete... ($counter/$timeout)"
+          echo "Waiting for nginx... ($counter/$timeout)"
           sleep 5
           counter=$((counter + 5))
       done
       
-      echo "✅ Nginx found, proceeding with configuration..."
+      echo "✅ Nginx found: $(nginx -v 2>&1)"
       
-      # Stop nginx if it's running
-      systemctl stop nginx || true
+      # Stop nginx if running
+      systemctl stop nginx 2>/dev/null || true
       
-      # Create necessary directories
+      # Create directories
       echo "Creating directories..."
       mkdir -p /var/log/nginx
       mkdir -p /var/www/html
       mkdir -p /etc/ssl/private
       mkdir -p /etc/ssl/certs
+      mkdir -p /etc/nginx/sites-available
+      mkdir -p /etc/nginx/sites-enabled
       
-      # Set proper permissions for directories
+      # Set permissions
       chown -R www-data:adm /var/log/nginx
       chmod -R 755 /var/log/nginx
       chown -R www-data:www-data /var/www/html
       chmod -R 755 /var/www/html
       
-      # Generate self-signed SSL certificate
+      # Generate SSL certificate
       echo "Generating SSL certificate..."
       openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
           -keyout /etc/ssl/private/nginx-selfsigned.key \
@@ -233,7 +265,6 @@ write_files:
           -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost" \
           -batch
       
-      # Set proper SSL certificate permissions
       chmod 600 /etc/ssl/private/nginx-selfsigned.key
       chmod 644 /etc/ssl/certs/nginx-selfsigned.crt
       chown root:root /etc/ssl/private/nginx-selfsigned.key
@@ -241,7 +272,7 @@ write_files:
       
       echo "✅ SSL certificates created"
       
-      # Download web content from storage with retry logic
+      # Download web content
       echo "Downloading web content..."
       for i in {1..5}; do
           if az storage blob download \
@@ -251,110 +282,103 @@ write_files:
               --name index.html \
               --file /var/www/html/index.html \
               --overwrite; then
-              echo "✅ Web content downloaded successfully"
+              echo "✅ Web content downloaded"
               break
           else
-              echo "⚠️ Attempt $i failed, retrying in 10 seconds..."
+              echo "⚠️ Download attempt $i failed, retrying..."
               if [ $i -eq 5 ]; then
-                  echo "❌ Failed to download web content after 5 attempts"
-                  # Create a fallback index.html
+                  echo "Creating fallback content..."
                   cat > /var/www/html/index.html << 'EOF'
       <!DOCTYPE html>
-      <html>
-      <head><title>Hello World</title></head>
-      <body><h1>Hello World</h1><p>Fallback content - storage download failed</p></body>
+      <html lang="en">
+      <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Hello World</title>
+      </head>
+      <body>
+          <h1>Hello World</h1>
+          <p>Azure Web Application - Running Successfully</p>
+      </body>
       </html>
       EOF
-                  echo "✅ Created fallback web content"
+                  echo "✅ Fallback content created"
               else
                   sleep 10
               fi
           fi
       done
       
-      # Set proper permissions for web content
+      # Set web content permissions
       chown -R www-data:www-data /var/www/html
       chmod -R 644 /var/www/html/*
       chmod 755 /var/www/html
       
-      # Remove default nginx site if it exists
+      # Enable site
       rm -f /etc/nginx/sites-enabled/default
-      
-      # Enable our site
       ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
       
-      # Test nginx configuration
+      # Test configuration
       echo "Testing nginx configuration..."
       if nginx -t; then
-          echo "✅ Nginx configuration is valid"
+          echo "✅ Configuration valid"
       else
-          echo "❌ Nginx configuration test failed!"
-          echo "Configuration details:"
-          nginx -T
+          echo "❌ Configuration invalid!"
+          nginx -t 2>&1 || true
+          echo "Running debug script..."
+          /usr/local/bin/debug-nginx.sh || true
           exit 1
       fi
       
-      # Enable and start nginx
+      # Start nginx
       echo "Starting nginx..."
       systemctl enable nginx
       
-      # Start nginx with detailed error reporting
       if systemctl start nginx; then
           echo "✅ Nginx started successfully"
+          sleep 3
+          
+          # Basic connectivity test
+          if curl -k -s -f https://localhost > /dev/null; then
+              echo "✅ HTTPS working"
+          else
+              echo "⚠️ HTTPS test failed"
+          fi
+          
+          if curl -s -I http://localhost | grep -q "301\|302"; then
+              echo "✅ HTTP redirect working"
+          else
+              echo "⚠️ HTTP redirect test failed"
+          fi
       else
           echo "❌ Failed to start nginx"
-          echo "Nginx status:"
-          systemctl status nginx --no-pager -l
-          echo "Nginx error log:"
-          tail -20 /var/log/nginx/error.log || echo "No error log found"
+          echo "Running debug script..."
+          /usr/local/bin/debug-nginx.sh || true
           exit 1
       fi
       
-      # Verify nginx is running and responding
-      sleep 5
-      if systemctl is-active --quiet nginx; then
-          echo "✅ Nginx is running successfully"
-          
-          # Test if nginx is responding locally (using simple approach to avoid template conflicts)
-          echo "Testing HTTPS response..."
-          if curl -k -s -f https://localhost > /dev/null; then
-              echo "✅ Nginx is responding to HTTPS requests"
-          else
-              echo "⚠️ Nginx may not be responding correctly to HTTPS"
-          fi
-          
-          echo "Testing HTTP redirect..."
-          if curl -s -I http://localhost | grep -q "301\|302"; then
-              echo "✅ HTTP to HTTPS redirect is working"
-          else
-              echo "⚠️ HTTP redirect may not be working correctly"
-          fi
-      else
-          echo "❌ Nginx failed to start properly"
-          systemctl status nginx --no-pager -l
-          exit 1
-      fi
-      
-      echo "✅ Nginx setup completed successfully!"
+      echo "✅ Nginx setup completed!"
     permissions: '0755'
 
 runcmd:
-  # Run the nginx setup script
+  # First, run the setup script
   - /usr/local/bin/setup-nginx.sh
   
-  # Enable firewall and allow only necessary ports
+  # If setup fails, run debug script
+  - |
+    if ! systemctl is-active --quiet nginx; then
+      echo "Nginx is not running, running debug script..."
+      /usr/local/bin/debug-nginx.sh || true
+    fi
+  
+  # Configure firewall
   - ufw --force enable
   - ufw allow 22/tcp
   - ufw allow 80/tcp
   - ufw allow 443/tcp
   
-  # Set up log rotation
-  - systemctl enable logrotate
-  
-  # Final verification and status
-  - echo "=== Final System Status ==="
+  # Final status check
+  - echo "=== Final Status Check ==="
   - systemctl status nginx --no-pager -l || true
   - nginx -t || true
-  - curl -k -I https://localhost || true
-  - curl -I http://localhost || true
-  - echo "=== Setup Complete ==="
+  - echo "=== Cloud-init Complete ==="
