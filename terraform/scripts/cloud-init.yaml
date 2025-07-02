@@ -315,14 +315,16 @@ write_files:
       if systemctl is-active --quiet nginx; then
           echo "✅ Nginx is running successfully"
           
-          # Test if nginx is responding locally
-          if curl -k -s -o /dev/null -w "%{http_code}" https://localhost | grep -q "200\|301\|302"; then
+          # Test if nginx is responding locally (using simple approach to avoid template conflicts)
+          echo "Testing HTTPS response..."
+          if curl -k -s -f https://localhost > /dev/null; then
               echo "✅ Nginx is responding to HTTPS requests"
           else
               echo "⚠️ Nginx may not be responding correctly to HTTPS"
           fi
           
-          if curl -s -o /dev/null -w "%{http_code}" http://localhost | grep -q "301\|302"; then
+          echo "Testing HTTP redirect..."
+          if curl -s -I http://localhost | grep -q "301\|302"; then
               echo "✅ HTTP to HTTPS redirect is working"
           else
               echo "⚠️ HTTP redirect may not be working correctly"
