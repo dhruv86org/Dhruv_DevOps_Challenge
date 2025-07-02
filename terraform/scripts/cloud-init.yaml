@@ -220,30 +220,90 @@ write_files:
       systemctl status nginx --no-pager -l
     permissions: '0755'
 
+  - path: /usr/local/bin/setup-nginx.sh
+    content: |
+      #!/bin/bash
+      set -e
+      
+      echo "Setting up nginx configuration..."
+      
+      # Wait for package installation to complete
+      while ! command -v nginx &> /dev/null; do
+          echo "Waiting for nginx installation to complete..."
+          sleep 5
+      done
+      
+      echo "Nginx found, proceeding with configuration..."
+      
+      # Create log directory and set permissions
+      mkdir -p /var/log/nginx
+      chown -R www-data:adm /var/log/nginx
+      chmod -R 755 /var/log/nginx
+      
+      # Generate self-signed SSL certificate
+      echo "Generating SSL certificate..."
+      openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+          -keyout /etc/ssl/private/nginx-selfsigned.key \
+          -out /etc/ssl/certs/nginx-selfsigned.crt \
+          -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
+      
+      # Set proper SSL certificate permissions
+      chmod 600 /etc/ssl/private/nginx-selfsigned.key
+      chmod 644 /etc/ssl/certs/nginx-selfsigned.crt
+      
+      # Download web content from storage
+      echo "Downloading web content..."
+      mkdir -p /var/www/html
+      
+      # Retry logic for Azure CLI download
+      for i in {1..5}; do
+          if az storage blob download \
+              --account-name ${storage_account_name} \
+              --account-key ${storage_account_key} \
+              --container-name web-content \
+              --name index.html \
+              --file /var/www/html/index.html; then
+              echo "Web content downloaded successfully"
+              break
+          else
+              echo "Attempt $i failed, retrying in 10 seconds..."
+              sleep 10
+          fi
+      done
+      
+      # Set proper permissions for web content
+      chown -R www-data:www-data /var/www/html
+      chmod -R 755 /var/www/html
+      
+      # Test nginx configuration
+      echo "Testing nginx configuration..."
+      if nginx -t; then
+          echo "Nginx configuration is valid"
+      else
+          echo "Nginx configuration test failed!"
+          exit 1
+      fi
+      
+      # Enable and start nginx
+      echo "Starting nginx..."
+      systemctl enable nginx
+      systemctl restart nginx
+      
+      # Verify nginx is running
+      if systemctl is-active --quiet nginx; then
+          echo "Nginx is running successfully"
+      else
+          echo "Failed to start nginx"
+          systemctl status nginx
+          exit 1
+      fi
+      
+      echo "Nginx setup completed successfully!"
+    permissions: '0755'
+
 runcmd:
-  - systemctl enable nginx
-  
-  # Create log directory and set permissions
-  - mkdir -p /var/log/nginx
-  - chown -R www-data:adm /var/log/nginx
-  - chmod -R 755 /var/log/nginx
-  
-  # Generate self-signed SSL certificate
-  - openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/nginx-selfsigned.key -out /etc/ssl/certs/nginx-selfsigned.crt -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
-  
-  # Download web content from storage
-  - mkdir -p /var/www/html
-  - az storage blob download --account-name ${storage_account_name} --account-key ${storage_account_key} --container-name web-content --name index.html --file /var/www/html/index.html
-  
-  # Set proper permissions
-  - chown -R www-data:www-data /var/www/html
-  - chmod -R 755 /var/www/html
-  
-  # Test nginx configuration before starting
-  - nginx -t
-  
-  # Start nginx
-  - systemctl start nginx
+  # Wait for package installation to complete and then run setup
+  - /usr/local/bin/setup-nginx.sh
   
   # Enable firewall and allow only necessary ports
   - ufw --force enable
@@ -256,3 +316,7 @@ runcmd:
   
   # Create a cron job for log monitoring (optional)
   - echo "0 6 * * * root /usr/local/bin/nginx-log-monitor.sh > /var/log/nginx-monitor.log 2>&1" >> /etc/crontab
+  
+  # Final verification
+  - systemctl status nginx --no-pager
+  - nginx -t
