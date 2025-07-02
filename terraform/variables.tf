@@ -10,6 +10,12 @@ variable "location" {
   default     = "East US"
 }
 
+variable "resource_group" {
+  description = "Resource group for the azure infrastructure"
+  type        = string
+  default     = "rg-webapp-terraform"
+}
+
 variable "project_name" {
   description = "Project name for resource naming"
   type        = string

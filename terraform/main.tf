@@ -7,7 +7,8 @@ resource "random_string" "suffix" {
 
 # Resource Group
 resource "azurerm_resource_group" "main" {
-  name     = "rg-${var.project_name}-${var.environment}-${random_string.suffix.result}"
+  #name     = "rg-${var.project_name}-${var.environment}-${random_string.suffix.result}"
+  name     = var.resource_group
   location = var.location
   tags     = var.tags
 }

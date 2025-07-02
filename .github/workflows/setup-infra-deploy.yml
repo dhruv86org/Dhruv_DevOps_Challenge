@@ -65,15 +65,15 @@ jobs:
       run: terraform plan -var="environment=${{ env.TF_VAR_environment }}" -out=tfplan
       
     - name: Terraform Apply
-      if: github.ref_name == 'main' && github.event_name == 'push'
+      #if: github.ref_name == 'main' && github.event_name == 'push'
       run: terraform apply -auto-approve tfplan
     
     - name: Get Terraform Outputs
       id: terraform_output
-      if: github.ref_name == 'main' && github.event_name == 'push'
+      #if: github.ref_name == 'main' && github.event_name == 'push'
       run: |
         echo "public_ip=$(terraform output -raw load_balancer_public_ip)" >> $GITHUB_OUTPUT
-        echo "resource_group=$(terraform output -raw resource_group_name)" >> $GITHUB_OUTPUT
+        # echo "resource_group=$(terraform output -raw resource_group_name)" >> $GITHUB_OUTPUT
 
   deploy-application:
     name: 'Deploy Web Application'
@@ -100,7 +100,7 @@ jobs:
       run: |
         # Get storage account details
         STORAGE_ACCOUNT=$(az storage account list \
-          --resource-group ${{ needs.terraform.outputs.resource_group }} \
+          --resource-group ${{ vars.RESOURCE_GROUP_NAME }} \
           --query "[0].name" -o tsv)
         
         STORAGE_KEY=$(az storage account keys list \
