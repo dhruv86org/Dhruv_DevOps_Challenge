@@ -104,7 +104,7 @@ jobs:
           --query "[0].name" -o tsv)
         
         STORAGE_KEY=$(az storage account keys list \
-          --resource-group ${{ needs.terraform.outputs.resource_group }} \
+          --resource-group ${{ vars.RESOURCE_GROUP_NAME }} \
           --account-name $STORAGE_ACCOUNT \
           --query "[0].value" -o tsv)
         
