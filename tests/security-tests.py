@@ -102,42 +102,42 @@ class SecurityTester:
             print(f"❌ HTTP redirect test failed: {str(e)}")
             return False
     
-    # def test_security_headers(self) -> bool:
-    #     """Test security headers"""
-    #     print("🔍 Testing security headers...")
+    def test_security_headers(self) -> bool:
+        """Test security headers"""
+        print("🔍 Testing security headers...")
         
-    #     try:
-    #         response = requests.get(f"https://{self.public_ip}", 
-    #                               verify=False, timeout=10)
+        try:
+            response = requests.get(f"https://{self.public_ip}", 
+                                  verify=False, timeout=10)
             
-    #         headers = response.headers
+            headers = response.headers
             
-    #         # Required security headers with exact expected values
-    #         required_headers = {
-    #             'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-    #             'X-Frame-Options': 'SAMEORIGIN',
-    #             'X-Content-Type-Options': 'nosniff',
-    #             'X-XSS-Protection': '1; mode=block'
-    #         }
+            # Required security headers with exact expected values
+            required_headers = {
+                'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+                'X-Frame-Options': 'SAMEORIGIN',
+                'X-Content-Type-Options': 'nosniff',
+                'X-XSS-Protection': '1; mode=block'
+            }
             
-    #         success = True
-    #         for header, expected_value in required_headers.items():
-    #             if header in headers:
-    #                 actual_value = headers[header]
-    #                 if actual_value == expected_value:
-    #                     print(f"✅ {header}: {actual_value}")
-    #                 else:
-    #                     print(f"❌ {header}: {actual_value} (expected: {expected_value})")
-    #                     success = False
-    #             else:
-    #                 print(f"❌ Missing security header: {header}")
-    #                 success = False
+            success = True
+            for header, expected_value in required_headers.items():
+                if header in headers:
+                    actual_value = headers[header]
+                    if actual_value == expected_value:
+                        print(f"✅ {header}: {actual_value}")
+                    else:
+                        print(f"❌ {header}: {actual_value} (expected: {expected_value})")
+                        success = False
+                else:
+                    print(f"❌ Missing security header: {header}")
+                    success = False
             
-    #         return success
+            return success
             
-    #     except Exception as e:
-    #         print(f"❌ Security headers test failed: {str(e)}")
-    #         return False
+        except Exception as e:
+            print(f"❌ Security headers test failed: {str(e)}")
+            return False
     
     def test_application_availability(self) -> bool:
         """Test application availability and content"""
