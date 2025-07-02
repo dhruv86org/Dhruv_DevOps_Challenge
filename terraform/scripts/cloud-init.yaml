@@ -6,155 +6,22 @@ packages:
   - nginx
   - azure-cli
   - curl
-  - unzip
-  - openssl
 
 write_files:
-  - path: /usr/local/bin/debug-nginx.sh
-    content: |
-      #!/bin/bash
-      echo "=== NGINX DEBUGGING SCRIPT ==="
-      echo "1. Checking nginx installation..."
-      
-      if command -v nginx &> /dev/null; then
-          echo "✅ Nginx is installed: $(nginx -v 2>&1)"
-      else
-          echo "❌ Nginx is not installed"
-          echo "Available packages:"
-          apt list --installed | grep nginx || true
-          exit 1
-      fi
-      
-      echo "2. Checking nginx configuration..."
-      if nginx -t; then
-          echo "✅ Nginx configuration is valid"
-      else
-          echo "❌ Nginx configuration is invalid:"
-          nginx -t 2>&1 || true
-          echo "Configuration files:"
-          find /etc/nginx -name "*.conf" -o -name "default" | head -10
-      fi
-      
-      echo "3. Checking required directories..."
-      directories=("/var/www/html" "/var/log/nginx" "/etc/ssl/private" "/etc/ssl/certs")
-      for dir in "$${directories[@]}"; do
-          if [ -d "$dir" ]; then
-              echo "✅ Directory exists: $dir"
-              ls -la "$dir" | head -5
-          else
-              echo "❌ Missing directory: $dir"
-          fi
-      done
-      
-      echo "4. Checking SSL certificates..."
-      if [ -f "/etc/ssl/certs/nginx-selfsigned.crt" ] && [ -f "/etc/ssl/private/nginx-selfsigned.key" ]; then
-          echo "✅ SSL certificates exist"
-          openssl x509 -in /etc/ssl/certs/nginx-selfsigned.crt -text -noout | head -10
-      else
-          echo "❌ SSL certificates missing"
-          ls -la /etc/ssl/certs/ | grep nginx || echo "No nginx certificates found"
-          ls -la /etc/ssl/private/ | grep nginx || echo "No nginx private keys found"
-      fi
-      
-      echo "5. Checking file permissions..."
-      if [ -f "/etc/ssl/private/nginx-selfsigned.key" ]; then
-          echo "SSL key permissions: $(ls -la /etc/ssl/private/nginx-selfsigned.key)"
-      fi
-      if [ -f "/etc/ssl/certs/nginx-selfsigned.crt" ]; then
-          echo "SSL cert permissions: $(ls -la /etc/ssl/certs/nginx-selfsigned.crt)"
-      fi
-      if [ -d "/var/www/html" ]; then
-          echo "Web root permissions: $(ls -la /var/www/html/)"
-      fi
-      
-      echo "6. Testing nginx startup..."
-      systemctl stop nginx 2>/dev/null || true
-      
-      if systemctl start nginx; then
-          echo "✅ Nginx started successfully"
-          systemctl status nginx --no-pager -l
-      else
-          echo "❌ Nginx failed to start"
-          echo "Systemctl status:"
-          systemctl status nginx --no-pager -l || true
-          echo "Nginx error log:"
-          tail -50 /var/log/nginx/error.log 2>/dev/null || echo "No error log found"
-          echo "System journal for nginx:"
-          journalctl -u nginx --no-pager -l --since "5 minutes ago" || true
-          exit 1
-      fi
-      
-      echo "7. Testing basic connectivity..."
-      sleep 3
-      
-      echo "Testing HTTP (should redirect):"
-      curl -v -I http://localhost 2>&1 || true
-      
-      echo "Testing HTTPS:"
-      curl -v -k -I https://localhost 2>&1 || true
-      
-      echo "=== DEBUGGING COMPLETE ==="
-    permissions: '0755'
-
-  - path: /etc/nginx/nginx.conf
-    content: |
-      user www-data;
-      worker_processes auto;
-      pid /run/nginx.pid;
-      include /etc/nginx/modules-enabled/*.conf;
-
-      events {
-          worker_connections 768;
-      }
-
-      http {
-          sendfile on;
-          tcp_nopush on;
-          tcp_nodelay on;
-          keepalive_timeout 65;
-          types_hash_max_size 2048;
-          server_tokens off;
-
-          include /etc/nginx/mime.types;
-          default_type application/octet-stream;
-
-          log_format main '$remote_addr - $remote_user [$time_local] "$request" '
-                         '$status $body_bytes_sent "$http_referer" '
-                         '"$http_user_agent" "$http_x_forwarded_for"';
-
-          access_log /var/log/nginx/access.log main;
-          error_log /var/log/nginx/error.log warn;
-
-          gzip on;
-          gzip_vary on;
-          gzip_proxied any;
-          gzip_comp_level 6;
-          gzip_types
-              text/plain
-              text/css
-              text/xml
-              text/javascript
-              application/json
-              application/javascript
-              application/xml+rss
-              application/atom+xml
-              image/svg+xml;
-
-          include /etc/nginx/conf.d/*.conf;
-          include /etc/nginx/sites-enabled/*;
-      }
-
   - path: /etc/nginx/sites-available/default
     content: |
       server {
           listen 80 default_server;
           listen [::]:80 default_server;
           
-          server_name _;
-          
-          access_log /var/log/nginx/http_access.log main;
-          error_log /var/log/nginx/http_error.log warn;
-          
+          # Health check endpoint
+          location /health {
+              access_log off;
+              return 200 "healthy\n";
+              add_header Content-Type text/plain;
+          }
+
+          # Redirect HTTP to HTTPS
           return 301 https://$host$request_uri;
       }
       
@@ -162,189 +29,50 @@ write_files:
           listen 443 ssl default_server;
           listen [::]:443 ssl default_server;
           
-          server_name _;
-          
-          access_log /var/log/nginx/https_access.log main;
-          error_log /var/log/nginx/https_error.log warn;
-          
+          # Self-signed SSL certificate
           ssl_certificate /etc/ssl/certs/nginx-selfsigned.crt;
           ssl_certificate_key /etc/ssl/private/nginx-selfsigned.key;
           
+          # SSL configuration
           ssl_protocols TLSv1.2 TLSv1.3;
-          ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES128-GCM-SHA256;
+          ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384;
           ssl_prefer_server_ciphers off;
-          ssl_session_cache shared:SSL:10m;
-          ssl_session_timeout 10m;
           
           root /var/www/html;
           index index.html;
-          
-          add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-          add_header X-Frame-Options "SAMEORIGIN" always;
-          add_header X-Content-Type-Options "nosniff" always;
-          add_header X-XSS-Protection "1; mode=block" always;
           
           location / {
               try_files $uri $uri/ =404;
           }
           
-          location = /health {
+          # Health check endpoint
+          location /health {
               access_log off;
-              add_header Content-Type "text/plain" always;
               return 200 "healthy\n";
-          }
-          
-          location = /status {
-              add_header Content-Type "text/plain" always;
-              return 200 "status: ok\nserver: $host\ntime: $time_local\n";
+              add_header Content-Type text/plain;
           }
       }
 
-  - path: /usr/local/bin/setup-nginx.sh
-    content: |
-      #!/bin/bash
-      set -e
-      
-      echo "=== Starting nginx setup ==="
-      
-      echo "Waiting for nginx installation..."
-      timeout=120
-      counter=0
-      while ! command -v nginx &> /dev/null; do
-          if [ $counter -ge $timeout ]; then
-              echo "ERROR: Nginx installation timeout"
-              exit 1
-          fi
-          echo "Waiting for nginx... ($counter/$timeout)"
-          sleep 5
-          counter=$((counter + 5))
-      done
-      
-      echo "✅ Nginx found: $(nginx -v 2>&1)"
-      
-      systemctl stop nginx 2>/dev/null || true
-      
-      echo "Creating directories..."
-      mkdir -p /var/log/nginx
-      mkdir -p /var/www/html
-      mkdir -p /etc/ssl/private
-      mkdir -p /etc/ssl/certs
-      mkdir -p /etc/nginx/sites-available
-      mkdir -p /etc/nginx/sites-enabled
-      
-      chown -R www-data:adm /var/log/nginx
-      chmod -R 755 /var/log/nginx
-      chown -R www-data:www-data /var/www/html
-      chmod -R 755 /var/www/html
-      
-      echo "Generating SSL certificate..."
-      openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-          -keyout /etc/ssl/private/nginx-selfsigned.key \
-          -out /etc/ssl/certs/nginx-selfsigned.crt \
-          -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost" \
-          -batch
-      
-      chmod 600 /etc/ssl/private/nginx-selfsigned.key
-      chmod 644 /etc/ssl/certs/nginx-selfsigned.crt
-      chown root:root /etc/ssl/private/nginx-selfsigned.key
-      chown root:root /etc/ssl/certs/nginx-selfsigned.crt
-      
-      echo "✅ SSL certificates created"
-      
-      echo "Downloading web content..."
-      for i in {1..5}; do
-          if az storage blob download \
-              --account-name ${storage_account_name} \
-              --account-key ${storage_account_key} \
-              --container-name web-content \
-              --name index.html \
-              --file /var/www/html/index.html \
-              --overwrite; then
-              echo "✅ Web content downloaded"
-              break
-          else
-              echo "⚠️ Download attempt $i failed, retrying..."
-              if [ $i -eq 5 ]; then
-                  echo "Creating fallback content..."
-                  cat > /var/www/html/index.html << 'EOF'
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Hello World</title>
-      </head>
-      <body>
-          <h1>Hello World</h1>
-          <p>Azure Web Application - Running Successfully</p>
-      </body>
-      </html>
-      EOF
-                  echo "✅ Fallback content created"
-              else
-                  sleep 10
-              fi
-          fi
-      done
-      
-      chown -R www-data:www-data /var/www/html
-      chmod -R 644 /var/www/html/*
-      chmod 755 /var/www/html
-      
-      rm -f /etc/nginx/sites-enabled/default
-      ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
-      
-      echo "Testing nginx configuration..."
-      if nginx -t; then
-          echo "✅ Configuration valid"
-      else
-          echo "❌ Configuration invalid!"
-          nginx -t 2>&1 || true
-          echo "Running debug script..."
-          /usr/local/bin/debug-nginx.sh || true
-          exit 1
-      fi
-      
-      echo "Starting nginx..."
-      systemctl enable nginx
-      
-      if systemctl start nginx; then
-          echo "✅ Nginx started successfully"
-          sleep 3
-          
-          if curl -k -s -f https://localhost > /dev/null; then
-              echo "✅ HTTPS working"
-          else
-              echo "⚠️ HTTPS test failed"
-          fi
-          
-          if curl -s -I http://localhost | grep -q "301\|302"; then
-              echo "✅ HTTP redirect working"
-          else
-              echo "⚠️ HTTP redirect test failed"
-          fi
-      else
-          echo "❌ Failed to start nginx"
-          echo "Running debug script..."
-          /usr/local/bin/debug-nginx.sh || true
-          exit 1
-      fi
-      
-      echo "✅ Nginx setup completed!"
-    permissions: '0755'
-
 runcmd:
-  - /usr/local/bin/setup-nginx.sh
-  - |
-    if ! systemctl is-active --quiet nginx; then
-      echo "Nginx is not running, running debug script..."
-      /usr/local/bin/debug-nginx.sh || true
-    fi
+  - systemctl enable nginx
+  - systemctl start nginx
+  
+  # Generate self-signed SSL certificate
+  - openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/nginx-selfsigned.key -out /etc/ssl/certs/nginx-selfsigned.crt -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
+  
+  # Download web content from storage
+  - mkdir -p /var/www/html
+  - az storage blob download --account-name ${storage_account_name} --account-key ${storage_account_key} --container-name web-content --name index.html --file /var/www/html/index.html
+  
+  # Set proper permissions
+  - chown -R www-data:www-data /var/www/html
+  - chmod -R 755 /var/www/html
+  
+  # Restart nginx to apply SSL configuration
+  - systemctl restart nginx
+  
+  # Enable firewall and allow only necessary ports
   - ufw --force enable
   - ufw allow 22/tcp
   - ufw allow 80/tcp
   - ufw allow 443/tcp
-  - echo "=== Final Status Check ==="
-  - systemctl status nginx --no-pager -l || true
-  - nginx -t || true
-  - echo "=== Cloud-init Complete ==="
