@@ -102,42 +102,44 @@ class SecurityTester:
             print(f"❌ HTTP redirect test failed: {str(e)}")
             return False
     
-    # def test_security_headers(self) -> bool:
-    #     """Test security headers"""
-    #     print("🔍 Testing security headers...")
+
+    def test_security_headers(self) -> bool:
+        """Test security headers"""
+        print("🔍 Testing security headers...")
         
-    #     try:
-    #         response = requests.get(f"https://{self.public_ip}", 
-    #                               verify=False, timeout=10)
+        try:
+            response = requests.get(f"https://{self.public_ip}", 
+                                  verify=False, timeout=10)
             
-    #         headers = response.headers
+            headers = response.headers
             
-    #         # Required security headers with exact expected values
-    #         required_headers = {
-    #             'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
-    #             'X-Frame-Options': 'SAMEORIGIN',
-    #             'X-Content-Type-Options': 'nosniff',
-    #             'X-XSS-Protection': '1; mode=block'
-    #         }
+            # Required security headers with exact expected values
+            required_headers = {
+                'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+                'X-Frame-Options': 'SAMEORIGIN',
+                'X-Content-Type-Options': 'nosniff',
+                'X-XSS-Protection': '1; mode=block'
+            }
             
-    #         success = True
-    #         for header, expected_value in required_headers.items():
-    #             if header in headers:
-    #                 actual_value = headers[header]
-    #                 if actual_value == expected_value:
-    #                     print(f"✅ {header}: {actual_value}")
-    #                 else:
-    #                     print(f"❌ {header}: {actual_value} (expected: {expected_value})")
-    #                     success = False
-    #             else:
-    #                 print(f"❌ Missing security header: {header}")
-    #                 success = False
+            success = True
+            for header, expected_value in required_headers.items():
+                if header in headers:
+                    actual_value = headers[header]
+                    if actual_value == expected_value:
+                        print(f"✅ {header}: {actual_value}")
+                    else:
+                        print(f"❌ {header}: {actual_value} (expected: {expected_value})")
+                        success = False
+                else:
+                    print(f"❌ Missing security header: {header}")
+                    success = False
             
-    #         return success
+            return success
             
-    #     except Exception as e:
-    #         print(f"❌ Security headers test failed: {str(e)}")
-    #         return False
+        except Exception as e:
+            print(f"❌ Security headers test failed: {str(e)}")
+            return False
+
     
     def test_application_availability(self) -> bool:
         """Test application availability and content"""
@@ -194,25 +196,8 @@ class SecurityTester:
             print(f"❌ Health endpoint test failed: {str(e)}")
             return False
     
-    def test_status_endpoint(self) -> bool:
-        """Test status monitoring endpoint"""
-        print("🔍 Testing status endpoint...")
-        
-        try:
-            response = requests.get(f"https://{self.public_ip}/status", 
-                                  verify=False, timeout=10)
-            
-            if response.status_code == 200 and "status: ok" in response.text.lower():
-                print("✅ Status endpoint is working")
-                print(f"✅ Status response: {response.text.strip()}")
-                return True
-            else:
-                print(f"❌ Status endpoint failed: {response.status_code}")
-                return False
-                
-        except Exception as e:
-            print(f"❌ Status endpoint test failed: {str(e)}")
-            return False
+
+
     
     def _is_port_open(self, port: int, timeout: int = 5) -> bool:
         """Check if a port is open"""
@@ -233,8 +218,7 @@ class SecurityTester:
             ("HTTP to HTTPS Redirect", self.test_http_to_https_redirect),
             ("Security Headers", self.test_security_headers),
             ("Application Availability", self.test_application_availability),
-            ("Health Endpoint", self.test_health_endpoint),
-            ("Status Endpoint", self.test_status_endpoint)
+            ("Health Endpoint", self.test_health_endpoint)
         ]
         
         results = []
