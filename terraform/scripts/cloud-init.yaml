@@ -14,18 +14,7 @@ write_files:
           listen 80 default_server;
           listen [::]:80 default_server;
           
-          # Health check endpoint
-          location /health {
-              access_log off;
-              return 200 "healthy\n";
-              add_header Content-Type text/plain;
-              # Security headers for health endpoint
-              # add_header X-Content-Type-Options nosniff always;
-              # add_header X-Frame-Options DENY always;
-              # add_header X-XSS-Protection "1; mode=block" always;
-          }
-
-          # Redirect HTTP to HTTPS
+          # Redirect HTTP to HTTPS using host header
           return 301 https://$host$request_uri;
       }
       
@@ -44,14 +33,8 @@ write_files:
           
           root /var/www/html;
           index index.html;
-
+          
           # Security headers
-          # add_header X-Content-Type-Options nosniff always;
-          # add_header X-Frame-Options DENY always;
-          # add_header X-XSS-Protection "1; mode=block" always;
-          # add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-          # add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-          # add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';" always;
           add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
           add_header X-Frame-Options "SAMEORIGIN" always;
           add_header X-Content-Type-Options "nosniff" always;
@@ -67,10 +50,10 @@ write_files:
               return 200 "healthy\n";
               add_header Content-Type text/plain;
               # Security headers for health endpoint
-              # add_header X-Content-Type-Options nosniff always;
-              # add_header X-Frame-Options DENY always;
-              # add_header X-XSS-Protection "1; mode=block" always;
-          }
+              add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+              add_header X-Frame-Options "SAMEORIGIN" always;
+              add_header X-Content-Type-Options "nosniff" always;
+              add_header X-XSS-Protection "1; mode=block" always;
           }
       }
 
