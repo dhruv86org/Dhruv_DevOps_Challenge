@@ -94,47 +94,7 @@ resource "azurerm_application_insights" "main" {
 #   }
 # }
 
-resource "azurerm_monitor_data_collection_rule" "vm_insights" {
-  name                = "dcr-vm-insights"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
-  tags                = var.tags
 
-  destinations {
-    log_analytics {
-      workspace_resource_id = azurerm_log_analytics_workspace.main.id
-      name                  = "la-destination"
-    }
-    azure_monitor_metrics {
-      name = "metrics-destination"
-    }
-  }
-
-  data_flow {
-    streams      = ["Microsoft-Perf"]
-    destinations = ["la-destination"]
-  }
-
-  data_flow {
-    streams      = ["Microsoft-InsightsMetrics"]
-    destinations = ["metrics-destination"]
-  }
-
-  data_sources {
-    performance_counter {
-      streams                       = ["Microsoft-Perf", "Microsoft-InsightsMetrics"]
-      sampling_frequency_in_seconds = 60
-      counter_specifiers = [
-        "\\Processor(_Total)\\% Processor Time",
-        "\\Memory\\Available Bytes",
-        "\\Memory\\% Committed Bytes In Use",
-        "\\LogicalDisk(_Total)\\Disk Transfers/sec",
-        "\\LogicalDisk(_Total)\\% Free Space"
-      ]
-      name = "perfcounter-datasource"
-    }
-  }
-}
 
 
 # Monitor Action Group for Alerts
